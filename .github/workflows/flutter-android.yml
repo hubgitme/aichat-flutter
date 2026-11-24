@@ -38,6 +38,8 @@ jobs:
           # web icon too (app drawer, recents screen and the APK file icon use them).
           for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             cp "android/app/src/main/res/mipmap-$d/ic_launcher.png" "android/app/src/main/res/mipmap-$d/ic_launcher_round.png"
+          done
+          for d in mdpi hdpi xhdpi xxhdpi; do
             cp "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png" "android/app/src/main/res/mipmap-$d/ic_launcher_foreground.png"
                   done
           # media_store_plus uses GSON internally: keep it from R8 shrinking
