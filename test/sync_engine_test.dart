@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:aichat/models.dart';
 import 'package:aichat/sync_crypto.dart';
 import 'package:aichat/sync_engine.dart';
