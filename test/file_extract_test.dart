@@ -1,34 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:aichat/file_extract.dart';
-import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-/// ساخت یک DOCX حداقلی در حافظه (ZIP با word/document.xml).
-List<int> makeDocx(List<String> paragraphs) {
-  final body = paragraphs
-      .map((p) => '<w:p><w:r><w:t>$p</w:t></w:r></w:p>')
-      .join('');
-  final xml =
-      '<?xml version="1.0"?><w:document xmlns:w="urn:x"><w:body>$body</w:body></w:document>';
-  final bytes = utf8.encode(xml);
-  final archive = Archive();
-  archive.addFile(ArchiveFile('word/document.xml', bytes.length, bytes));
-  return ZipEncoder().encode(archive);
-}
-
-/// ساخت یک PDF حداقلی با یک استریم متنی (فشرده یا خام).
-List<int> makePdf(String streamText, {bool deflate = true}) {
-  final raw = utf8.encode(streamText);
-  final data = deflate ? zlib.encode(raw) : raw;
-  final out = <int>[];
-  out.addAll(utf8.encode(
-      '%PDF-1.4\n1 0 obj\n<< /Length ${data.length} >>\nstream\n'));
-  out.addAll(data);
-  out.addAll(utf8.encode('\nendstream\nendobj\n'));
-  return out;
-}
 
 void main() {
   group('fileExtension / isDocumentFileName / isImageFileName', () {
@@ -42,51 +15,17 @@ void main() {
     test('web extension lists', () {
       expect(isDocumentFileName('notes.txt'), isTrue);
       expect(isDocumentFileName('main.py'), isTrue);
-      expect(isDocumentFileName('doc.docx'), isTrue);
-      expect(isDocumentFileName('doc.pdf'), isTrue);
-      expect(isDocumentFileName('old.doc'), isTrue);
       expect(isDocumentFileName('setup.exe'), isFalse);
       expect(isImageFileName('pic.png'), isTrue);
       expect(isImageFileName('pic.jpg'), isTrue);
       expect(isImageFileName('pic.webp'), isTrue);
       expect(isImageFileName('notes.txt'), isFalse);
     });
-  });
 
-  group('extractTextFromDocxBytes', () {
-    test('extracts w:t runs with a newline per paragraph', () {
-      final bytes = makeDocx(['سلام دنیا', 'خط دوم']);
-      expect(extractTextFromDocxBytes(bytes), 'سلام دنیا\nخط دوم');
-    });
-
-    test('returns empty for a non-docx zip', () {
-      final archive = Archive();
-      final bytes = ZipEncoder().encode(archive);
-      expect(extractTextFromDocxBytes(bytes), '');
-    });
-  });
-
-  group('extractTextFromPdfBytes', () {
-    test('reads a FlateDecode stream with Tj', () {
-      final bytes =
-          makePdf('BT /F1 24 Tf 100 700 Td (Hello World) Tj ET');
-      expect(extractTextFromPdfBytes(bytes), contains('Hello World'));
-    });
-
-    test('reads a TJ array', () {
-      final bytes = makePdf('[(Hello) -120 (World)] TJ');
-      expect(extractTextFromPdfBytes(bytes), contains('Hello World'));
-    });
-
-    test('reads an uncompressed stream', () {
-      final bytes =
-          makePdf('BT (Plain Text) Tj ET', deflate: false);
-      expect(extractTextFromPdfBytes(bytes), contains('Plain Text'));
-    });
-
-    test('returns empty when there is no text', () {
-      final bytes = makePdf('BT ET');
-      expect(extractTextFromPdfBytes(bytes), '');
+    test('office files are not supported', () {
+      expect(isDocumentFileName('doc.docx'), isFalse);
+      expect(isDocumentFileName('doc.pdf'), isFalse);
+      expect(isDocumentFileName('old.doc'), isFalse);
     });
   });
 
@@ -110,15 +49,17 @@ void main() {
       );
     });
 
-    test('.doc is rejected with the web message', () {
-      expect(
-        () => extractTextFromFileBytes('old.doc', [1, 2, 3]),
-        throwsA(isA<FileExtractException>().having(
-          (e) => e.message,
-          'message',
-          contains('فرمت قدیمی .doc'),
-        )),
-      );
+    test('office files are rejected', () {
+      for (final name in ['a.docx', 'a.pdf', 'a.doc']) {
+        expect(
+          () => extractTextFromFileBytes(name, [1, 2, 3]),
+          throwsA(isA<FileExtractException>().having(
+            (e) => e.message,
+            'message',
+            contains('آفیس'),
+          )),
+        );
+      }
     });
 
     test('empty extraction throws the web message', () {
