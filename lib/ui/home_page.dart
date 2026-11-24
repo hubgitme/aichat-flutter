@@ -22,6 +22,7 @@ import '../sync_crypto.dart';
 import '../sync_engine.dart';
 import '../utils.dart';
 import 'code_block.dart';
+import 'mode_selectors.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -612,6 +613,73 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// بازگشت به گفت‌وگوی عادی (بدون حالت خاص).
+  void _clearMode() {
+    setState(() {
+      _searchMode = false;
+      _imageMode = false;
+      _videoMode = false;
+    });
+  }
+
+  bool get _isPlainChat => !_searchMode && !_imageMode && !_videoMode;
+
+  String? get _activeModeLabel {
+    if (_imageMode) return 'تولید تصویر';
+    if (_videoMode) return 'تولید ویدیو';
+    if (_searchMode) return 'جست‌وجوی وب';
+    return null;
+  }
+
+  String get _composerHint {
+    if (_imageMode) return 'پرامپت تصویر…';
+    if (_videoMode) return 'پرامپت ویدیو…';
+    if (_searchMode) return 'سؤال برای جست‌وجوی وب…';
+    return 'پیام…';
+  }
+
+  /// انتخاب از منوی «+» کنار کامپوزر.
+  void _onComposerMenuSelected(String value) {
+    switch (value) {
+      case 'chat':
+        _clearMode();
+        break;
+      case 'attach':
+        _pickImage();
+        break;
+      case 'search':
+        _toggleSearchMode();
+        break;
+      case 'image':
+        _toggleImageMode();
+        break;
+      case 'video':
+        _toggleVideoMode();
+        break;
+    }
+  }
+
+  Future<void> _openSettings() async {
+    final settings = _settings;
+    if (settings == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SettingsPage(
+          settings: settings,
+          onSettingsChanged: _saveSettings,
+          onSyncNow: () => _syncNow(),
+          onDisconnectSync: () async {
+            final prefs = await SharedPreferences.getInstance();
+            await TombstoneStore(prefs).clear();
+            setState(() => _lastSyncText = '');
+          },
+          lastSyncText: _lastSyncText,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   // --- رابط کاربری ---
 
   @override
@@ -640,31 +708,14 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: 'تنظیمات',
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SettingsPage(
-                    settings: settings,
-                    onSettingsChanged: _saveSettings,
-                    onSyncNow: () => _syncNow(),
-                    onDisconnectSync: () async {
-                      final prefs =
-                          await SharedPreferences.getInstance();
-                      await TombstoneStore(prefs).clear();
-                      setState(() => _lastSyncText = '');
-                    },
-                    lastSyncText: _lastSyncText,
-                  ),
-                ),
-              );
-              if (mounted) setState(() {});
-            },
+            onPressed: _openSettings,
           ),
         ],
       ),
       drawer: _buildDrawer(),
       body: Column(
         children: [
+          _buildTopbarSelectors(settings),
           if (!settings.hasBackend)
             MaterialBanner(
               content: const Text(
@@ -672,20 +723,7 @@ class _HomePageState extends State<HomePage> {
               leading: const Icon(Icons.warning_amber),
               actions: [
                 TextButton(
-                  onPressed: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => SettingsPage(
-                          settings: settings,
-                          onSettingsChanged: _saveSettings,
-                          onSyncNow: () => _syncNow(),
-                          onDisconnectSync: () {},
-                          lastSyncText: _lastSyncText,
-                        ),
-                      ),
-                    );
-                    if (mounted) setState(() {});
-                  },
+                  onPressed: _openSettings,
                   child: const Text('تنظیمات'),
                 ),
               ],
@@ -798,6 +836,76 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// نوارِ انتخابِ پروایدر/مدل و کلیدِ چت — مثل نوار بالای نسخهٔ وب.
+  /// اگر هنوز پروایدر یا کلیدی ثبت نشده، دکمه‌ای برای رفتن به تنظیمات است.
+  Widget _buildTopbarSelectors(AppSettings settings) {
+    final theme = Theme.of(context);
+    if (settings.providers.isEmpty && settings.apiKeys.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border(
+            bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
+        ),
+        child: InkWell(
+          onTap: _openSettings,
+          child: Text(
+            'پروایدر و کلید چت تنظیم نشده — برای افزودن، اینجا بزن',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: ProviderModelDropdown(
+              settings: settings,
+              value: settings.chatProviderModel,
+              dense: true,
+              hintText: 'پروایدر / مدل',
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => settings.chatProviderModel = v);
+                _saveSettings();
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: ApiKeyDropdown(
+              settings: settings,
+              value: settings.chatKey,
+              dense: true,
+              hintText: 'کلید',
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => settings.chatKey = v);
+                _saveSettings();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildComposer() {
     final theme = Theme.of(context);
     return SafeArea(
@@ -845,64 +953,35 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
+            if (_activeModeLabel != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Chip(
+                    label: Text('حالت: $_activeModeLabel'),
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                    onDeleted: _clearMode,
+                  ),
+                ),
+              ),
+            TextField(
+              controller: _composerCtrl,
+              maxLines: 5,
+              minLines: 1,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _send(),
+              decoration: InputDecoration(
+                hintText: _composerHint,
+                border: const OutlineInputBorder(),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
+              ),
+            ),
+            const SizedBox(height: 6),
             Row(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.attach_file),
-                  tooltip: 'پیوست عکس',
-                  onPressed: _streaming ? null : _pickImage,
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.search,
-                    color: _searchMode
-                        ? theme.colorScheme.primary
-                        : null,
-                  ),
-                  tooltip: 'جست‌وجوی وب',
-                  onPressed: _streaming ? null : _toggleSearchMode,
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.image,
-                    color: _imageMode
-                        ? theme.colorScheme.primary
-                        : null,
-                  ),
-                  tooltip: 'حالت تصویر',
-                  onPressed: _streaming ? null : _toggleImageMode,
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.videocam,
-                    color: _videoMode
-                        ? theme.colorScheme.primary
-                        : null,
-                  ),
-                  tooltip: 'حالت ویدیو',
-                  onPressed: _streaming ? null : _toggleVideoMode,
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _composerCtrl,
-                    maxLines: 5,
-                    minLines: 1,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(),
-                    decoration: InputDecoration(
-                      hintText: _imageMode
-                          ? 'پرامپت تصویر…'
-                          : _videoMode
-                              ? 'پرامپت ویدیو…'
-                              : 'پیام…',
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
                 _streaming
                     ? IconButton.filled(
                         icon: const Icon(Icons.stop),
@@ -914,10 +993,44 @@ class _HomePageState extends State<HomePage> {
                         tooltip: 'ارسال',
                         onPressed: _send,
                       ),
+                const Spacer(),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'حالت و ابزار',
+                  enabled: !_streaming,
+                  onSelected: _onComposerMenuSelected,
+                  itemBuilder: (ctx) => [
+                    _composerMenuItem(
+                        'chat', Icons.chat_bubble_outline, 'گفت‌وگوی عادی', _isPlainChat),
+                    _composerMenuItem(
+                        'attach', Icons.attach_file, 'پیوست عکس', false),
+                    _composerMenuItem(
+                        'search', Icons.search, 'جست‌وجوی وب', _searchMode),
+                    _composerMenuItem(
+                        'image', Icons.image, 'تولید تصویر', _imageMode),
+                    _composerMenuItem(
+                        'video', Icons.videocam, 'تولید ویدیو', _videoMode),
+                  ],
+                ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _composerMenuItem(
+      String value, IconData icon, String title, bool active) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(title)),
+          if (active) const Icon(Icons.check, size: 18),
+        ],
       ),
     );
   }
