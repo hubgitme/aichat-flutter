@@ -138,7 +138,7 @@ class _CodeBlockCardState extends State<CodeBlockCard> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${_lineCount} خط • ${widget.code.length} کاراکتر',
+                  '$_lineCount خط • ${widget.code.length} کاراکتر',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
