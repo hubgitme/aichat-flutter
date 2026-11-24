@@ -1,0 +1,52 @@
+name: Build Flutter Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Scaffold Android platform
+        run: |
+          flutter create --platforms=android --project-name aichat --org com.hubgitme /tmp/scaffold
+          cp -r /tmp/scaffold/android .
+          sed -i 's/android:label="[^"]*"/android:label="ای‌چت"/' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
+            sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' android/app/src/main/AndroidManifest.xml
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze and test
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build release APK (arm64 only)
+        run: |
+          flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }}
+          base64 -d keystore/release.p12.b64 > /tmp/release.p12
+          BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          ${BT}zipalign -f -p 4 build/app/outputs/flutter-apk/app-release.apk /tmp/aligned.apk
+          ${BT}apksigner sign --ks /tmp/release.p12 --ks-type PKCS12 --ks-pass pass:aichat --key-pass pass:aichat --out aichat-arm64.apk /tmp/aligned.apk
+          ${BT}apksigner verify --print-certs aichat-arm64.apk
+          ls -lh aichat-arm64.apk
+
+      - name: Publish APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v1.0.0 aichat-arm64.apk --title "ای‌چت Flutter — نسخه ۱" --notes "نسخه نیتیو Flutter (چت + جست‌وجوی وب + خواندن لینک + تصویر + ویدیو + سینک رمزنگاری‌شده)" || gh release upload v1.0.0 aichat-arm64.apk --clobber
