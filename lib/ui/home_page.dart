@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../downloads.dart';
+import '../file_extract.dart';
 import '../models.dart';
 import '../settings.dart';
 import '../store.dart';
@@ -47,8 +49,15 @@ class _HomePageState extends State<HomePage> {
   bool _cancelled = false;
   http.Client? _activeChatClient;
 
-  // پیوست‌ها — عکس‌ها (vision).
+  // پیوست‌ها — مثل نسخهٔ وب: عکس‌ها (vision) و فایل‌های سند (متنِ استخراج‌شده).
   final List<_AttachedImage> _attachedImages = [];
+  final List<_AttachedDoc> _attachedDocs = [];
+
+  /// فایل‌های سندِ معتبر (متن استخراج شده و بدون خطا).
+  List<AttachedDoc> get _validDocs => _attachedDocs
+      .where((d) => d.text != null && d.error == null)
+      .map((d) => AttachedDoc(name: d.name, text: d.text!))
+      .toList();
 
   List<String> get _attachedImageUrls =>
       _attachedImages.map((i) => i.dataUrl).toList();
@@ -345,9 +354,81 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // --- پیوست فایل (مثل نسخهٔ وب: عکس + سند/کد + PDF + Word) ---
+
+  Future<void> _pickFiles() async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: pickableExtensions,
+      );
+      for (final f in files) {
+        final name = f.name;
+        final ext = fileExtension(name);
+        if (imageExtensions.contains(ext)) {
+          final bytes = await f.readAsBytes();
+          if (bytes.length > 8 * 1024 * 1024) {
+            _snack('عکس بزرگ‌تر از ۸ مگابایت است.');
+            continue;
+          }
+          final lower = name.toLowerCase();
+          final mime = lower.endsWith('.png')
+              ? 'image/png'
+              : lower.endsWith('.webp')
+                  ? 'image/webp'
+                  : lower.endsWith('.gif')
+                      ? 'image/gif'
+                      : 'image/jpeg';
+          if (mounted) {
+            setState(() {
+              _attachedImages.add(_AttachedImage(
+                bytes: bytes,
+                dataUrl: 'data:$mime;base64,${base64Encode(bytes)}',
+                name: name,
+              ));
+            });
+          }
+          continue;
+        }
+        if (!documentExtensions.contains(ext)) {
+          _snack('نوع فایل «$name» پشتیبانی نمی‌شود.');
+          continue;
+        }
+        // سقف حجم را قبل از خواندنِ کامل چک می‌کنیم (مثل وب).
+        final size = await f.length();
+        if (size != null && size > maxSingleFileBytes) {
+          _snack('حجم فایل «$name» بیش از حد مجاز است (حداکثر ۵ مگابایت).');
+          continue;
+        }
+        final doc = _AttachedDoc(name: name, loading: true);
+        if (mounted) setState(() => _attachedDocs.add(doc));
+        try {
+          final bytes = await f.readAsBytes();
+          final text = extractTextFromFileBytes(name, bytes);
+          if (mounted) {
+            setState(() {
+              doc.text = text;
+              doc.loading = false;
+            });
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              doc.error = e.toString();
+              doc.loading = false;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      _snack('خطا در انتخاب فایل: $e');
+    }
+  }
+
   void _clearAttachment() {
     setState(() {
       _attachedImages.clear();
+      _attachedDocs.clear();
     });
   }
 
@@ -376,7 +457,9 @@ class _HomePageState extends State<HomePage> {
     final settings = _settings;
     if (settings == null) return;
     final text = _composerCtrl.text.trim();
-    if (text.isEmpty && _attachedImages.isEmpty) {
+    if (text.isEmpty &&
+        _attachedImages.isEmpty &&
+        _validDocs.isEmpty) {
       return;
     }
     if (!settings.hasBackend) {
@@ -402,14 +485,22 @@ class _HomePageState extends State<HomePage> {
     }
 
     final images = _attachedImages.isEmpty ? null : _attachedImageUrls;
+    // متنِ فایل‌های پیوستی به پیام اضافه می‌شود (همان docsBlock نسخهٔ وب)؛
+    // content همان متنِ تایپ‌شده می‌ماند و docNames برای نمایش ذخیره می‌شود.
+    final docs = _validDocs;
+    final docsBlock = buildDocsBlock(docs);
     final userMsg = ChatMessage(
       role: 'user',
       content: text,
+      apiContent: docsBlock.isEmpty ? null : text + docsBlock,
       images: images,
+      docNames: docs.isEmpty ? null : docs.map((d) => d.name).toList(),
     );
     conv.messages.add(userMsg);
     if (isFirstUserMsg) {
-      final titleBase = text.isNotEmpty ? text : 'گفت‌وگوی جدید';
+      final titleBase = text.isNotEmpty
+          ? text
+          : (docs.isNotEmpty ? '📄 ${docs.first.name}' : 'گفت‌وگوی جدید');
       conv.title =
           titleBase.length > 40 ? titleBase.substring(0, 40) : titleBase;
     }
@@ -663,6 +754,9 @@ class _HomePageState extends State<HomePage> {
         break;
       case 'attach':
         _pickImage();
+        break;
+      case 'file':
+        _pickFiles();
         break;
       case 'search':
         _toggleSearchMode();
@@ -938,8 +1032,9 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // پیش‌نمایش پیوست‌ها — بند انگشتی عکس‌ها، هرکدام با ✕ برای حذف.
-            if (_attachedImages.isNotEmpty)
+            // پیش‌نمایش پیوست‌ها — مثل نسخهٔ وب: بند انگشتی عکس‌ها و
+            // چیپِ فایل‌های سند (با وضعیت خواندن/خطا)، هرکدام با ✕ برای حذف.
+            if (_attachedImages.isNotEmpty || _attachedDocs.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
                 child: Padding(
@@ -978,6 +1073,20 @@ class _HomePageState extends State<HomePage> {
                               ),
                             ),
                           ],
+                        ),
+                      for (var i = 0; i < _attachedDocs.length; i++)
+                        Chip(
+                          label: Text(
+                            _attachedDocs[i].loading
+                                ? '⏳ ${_attachedDocs[i].name}'
+                                : _attachedDocs[i].error != null
+                                    ? '⚠️ ${_attachedDocs[i].name}'
+                                    : '📄 ${_attachedDocs[i].name}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () =>
+                              setState(() => _attachedDocs.removeAt(i)),
                         ),
                     ],
                   ),
@@ -1034,6 +1143,8 @@ class _HomePageState extends State<HomePage> {
                         'chat', Icons.chat_bubble_outline, 'گفت‌وگوی عادی', _isPlainChat),
                     _composerMenuItem(
                         'attach', Icons.attach_file, 'پیوست عکس', false),
+                    _composerMenuItem('file', Icons.insert_drive_file,
+                        'پیوست فایل', false),
                     _composerMenuItem(
                         'search', Icons.search, 'جست‌وجوی وب', _searchMode),
                     _composerMenuItem(
@@ -1103,6 +1214,17 @@ class _MessageBubble extends StatelessWidget {
                   )),
             if (message.generatedVideo && message.videoUrl != null)
               _VideoCard(url: message.videoUrl!),
+            // نام فایل‌های پیوستی — مثل docHint نسخهٔ وب.
+            if (message.docNames != null && message.docNames!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '📄 پیوست: ${message.docNames!.join('، ')}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             if (message.content.isNotEmpty)
               isUser
                   ? SelectableText(message.content)
@@ -1285,5 +1407,17 @@ class _AttachedImage {
     required this.bytes,
     required this.dataUrl,
     required this.name,
+  });
+}
+
+/// یک فایلِ سندِ پیوستی (نام + متنِ استخراج‌شده یا وضعیت خواندن/خطا).
+class _AttachedDoc {
+  final String name;
+  String? text;
+  bool loading;
+  String? error;
+  _AttachedDoc({
+    required this.name,
+    this.loading = false,
   });
 }
