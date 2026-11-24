@@ -78,15 +78,13 @@ String _truncate(String text) {
 }
 
 /// استخراج متن از DOCX: فایل ZIP است؛ word/document.xml خوانده و
-/// محتوای تگ‌های <w:t> (متنِ runها) با خطِ جدید بین پاراگراف‌ها برمی‌گردد.
+/// محتوای تگ‌های `<w:t>` (متنِ runها) با خطِ جدید بین پاراگراف‌ها برمی‌گردد.
 String extractTextFromDocxBytes(List<int> bytes) {
   try {
     final archive = ZipDecoder().decodeBytes(bytes);
     final entry = archive.findFile('word/document.xml');
     if (entry == null) return '';
-    final content = entry.content;
-    if (content is! List<int>) return '';
-    final xml = utf8.decode(content, allowMalformed: true);
+    final xml = utf8.decode(entry.content, allowMalformed: true);
     final runRe = RegExp(r'<w:t[^>]*>([^<]*)</w:t>');
     final paragraphs = <String>[];
     for (final part in xml.split('</w:p>')) {
@@ -219,8 +217,7 @@ String extractTextFromPdfBytes(List<int> bytes) {
       final chunk = raw.substring(dataStart, dataEnd);
       String text;
       try {
-        final inflated =
-            ZLibDecoder().convert(chunk.codeUnits);
+        final inflated = zlib.decode(chunk.codeUnits);
         text = String.fromCharCodes(inflated);
       } catch (_) {
         text = chunk;
@@ -265,9 +262,9 @@ String extractTextFromFileBytes(String name, List<int> bytes) {
 /// بلوکِ متنِ فایل‌ها برای اضافه‌شدن به پیام (همان docsBlock در js/ui.js).
 String buildDocsBlock(List<AttachedDoc> docs) {
   if (docs.isEmpty) return '';
-  return '\n\n' +
-      docs
-          .map((d) =>
-              '--- محتوای فایل «${d.name}» ---\n${d.text}\n--- پایان فایل «${d.name}» ---')
-          .join('\n\n');
+  final parts = docs
+      .map((d) =>
+          '--- محتوای فایل «${d.name}» ---\n${d.text}\n--- پایان فایل «${d.name}» ---')
+      .join('\n\n');
+  return '\n\n$parts';
 }
