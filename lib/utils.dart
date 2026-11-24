@@ -6,7 +6,7 @@ import 'models.dart';
 /// استخراج آدرس‌ها از متن؛ نقطه‌گذاریِ چسبیده به آخر لینک حذف و تکراری‌ها
 /// یکی می‌شوند (همان URL_RE در js/urlread.js).
 List<String> extractUrls(String text) {
-  final re = RegExp(r"https?://[^\s<>""')\]]+");
+  final re = RegExp(r"https?://[^\s<>\"\"')\]]+");
   final found = <String>[];
   for (final m in re.allMatches(text)) {
     final url = m.group(0)!.replaceAll(RegExp(r'[.,،;!?]+$'), '');
