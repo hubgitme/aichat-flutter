@@ -23,7 +23,7 @@ class AichatApp extends StatelessWidget {
       valueListenable: appThemeMode,
       builder: (context, mode, _) {
         return MaterialApp(
-          title: 'ای‌چت',
+          title: 'AI CHAT',
           debugShowCheckedModeBanner: false,
           locale: const Locale('fa'),
           supportedLocales: const [
