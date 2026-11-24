@@ -94,6 +94,11 @@ String extractTextFromDocxBytes(List<int> bytes) {
       }
       paragraphs.add(runs.join(''));
     }
+    // بخشِ آخرِ split بعد از آخرین </w:p> پاراگراف نیست (مثلاً </w:body>)؛
+    // پاراگراف‌های خالیِ انتهایی حذف می‌شوند تا متن با \n تمام نشود.
+    while (paragraphs.isNotEmpty && paragraphs.last.isEmpty) {
+      paragraphs.removeLast();
+    }
     return paragraphs.join('\n');
   } catch (_) {
     return '';
