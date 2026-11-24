@@ -1,15 +1,13 @@
 // نمایش بلوک کد در پیام‌های مارک‌داون — با دکمهٔ کپی و دانلود، و جمع‌شدنِ
 // خودکارِ کدهای طولانی (همان رفتار نسخهٔ وب: ۱۲۰۰ کاراکتر یا ۳۰ خط).
 
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
-import 'package:path_provider/path_provider.dart';
 
+import '../app_theme.dart';
+import '../downloads.dart';
 import '../utils.dart';
 
 /// سازندهٔ سفارشی برای تگ `pre` در flutter_markdown.
@@ -82,11 +80,13 @@ class _CodeBlockCardState extends State<CodeBlockCard> {
 
   Future<void> _download() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File(
-          '${dir.path}/${filenameForLang(widget.language)}');
-      await file.writeAsString(widget.code, encoding: utf8);
-      widget.onNotice('ذخیره شد: ${file.path}');
+      final result = await saveTextToDownloads(
+        text: widget.code,
+        filename: filenameForLang(widget.language),
+      );
+      widget.onNotice(result.isPublic
+          ? 'در پوشهٔ Downloads ذخیره شد: ${result.displayPath}'
+          : 'ذخیره شد: ${result.displayPath}');
     } catch (e) {
       widget.onNotice('خطا در ذخیرهٔ فایل: $e');
     }
@@ -123,7 +123,7 @@ class _CodeBlockCardState extends State<CodeBlockCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: codeToolbarBackground(theme.brightness),
             padding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
@@ -165,7 +165,7 @@ class _CodeBlockCardState extends State<CodeBlockCard> {
           ),
           Container(
             padding: const EdgeInsets.all(10),
-            color: theme.colorScheme.surfaceContainerLow,
+            color: codeBlockBackground(theme.brightness),
             child: Directionality(
               textDirection: TextDirection.ltr,
               child: body,
