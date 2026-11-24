@@ -1,0 +1,24 @@
+{
+  "code": "ABCD-EFGH-JKLM-NPQR-STUV",
+  "syncId": "ac5599729bc270eeb64298dcf87615861c05e1ccfc4397486bcb66433e3bac9f",
+  "aesKeyHex": "6dec4fb6a4d3e610cf050390d2214530cb879ee9f08c36ba6c89f4ab1140918e",
+  "plaintext": {
+    "id": "c1",
+    "title": "تست",
+    "created_at": 1700000000000,
+    "updated_at": 1700000001000,
+    "messages": [
+      {
+        "role": "user",
+        "content": "سلام"
+      },
+      {
+        "role": "assistant",
+        "content": "سلام! چطوری؟"
+      }
+    ]
+  },
+  "jsBlob": "AlwnZywasnppbuvjFINdHPsM2njVoEcxoHw+a0AUP1y4S/VnRnnz5+gIEYVk/pRGtrBlrycfp4etF/AWLJc65R9AawvUQx7XoEOkDF6T5VUaT1qnoibYkZFnZ0m99THdYPw3e+vPiKPZeiPKNLUyJ1m1th1uCA9+9WoC/sYJRyyCwhmg05aGNl9tb4cI1gKgbVLkyR9nfUQe/ZAwUZL055zUX2uPQVcoZuyn17m4A3OPVNI=",
+  "kind1Blob": "AVnobb9/rqcdCryms34sp1yM9p2uz3txuIRNDuuVDe6jaZIRBaFLNQobhE4VBDazy6sYOsS33eJbuq1RoBkG32qWgTlxzh/4uiFEMJpQet5e/HSFXTAoAAbNOETFM3goiFTK23HK12VNFvDsU6Yg4a05Pl1EQTn8Dm7dA8gom7Nk7/f2uPhE5Nzs5jwUW5P3MdsVPg8XAq2DbKOgPeDRTu3ZF3YqREznasuY9/UxkuZUqPz+wz5GVHO80XRkCxcuxzUBJ9h5eYuWtLjA1PZM5TPTghl6UQhmGQ==",
+  "kind2Blob": "AsSjTi9HqLOeUW7+HUYjFQI5CxeQ8TWWg/zQmNpPM/cJ0GRLdb1YX0ZmmDyEUjQnrFCfVm6RfC8YRwy/jV/0TtQzrbae2GnH+ao/YWIoRo0gEam4trQqUGMxUzWqoyq1XzjIHj9EY9GGfHXALcAwA5fd0q+33TzG6g5avq4k1hqXC0KCWsNcDaqVXByEYwy3kL21/Oq9QGnA2mJNmyrcipE6lBlz1ukkyBrDiWawYwmOM/E="
+}
