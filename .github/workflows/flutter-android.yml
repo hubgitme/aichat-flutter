@@ -26,6 +26,20 @@ jobs:
           sed -i 's/android:label="[^"]*"/android:label="ای‌چت"/' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
             sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' android/app/src/main/AndroidManifest.xml
+          # Launcher icon from the web version (android-icon/ in the repo; PNGs stored base64)
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            base64 -d "android-icon/mipmap-$d/ic_launcher.png.b64" > "android/app/src/main/res/mipmap-$d/ic_launcher.png"
+          done
+          base64 -d android-icon/mipmap-xxxhdpi/ic_launcher_foreground.png.b64 > android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+          mkdir -p android/app/src/main/res/values
+          cp android-icon/res/values/ic_launcher_background.xml android/app/src/main/res/values/ic_launcher_background.xml
+          # media_store_plus uses GSON internally: keep it from R8 shrinking
+          if [ -f android/app/proguard-rules.pro ]; then
+            printf '%s\n' '-keep class com.google.gson.** { *; }' '-keep class com.snnafi.media_store_plus.** { *; }' >> android/app/proguard-rules.pro
+          fi
+          # WRITE_EXTERNAL_STORAGE (API <=29 only) for the direct-file path of MediaStore saves on old Android
+          grep -q 'WRITE_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml || \
+            sed -i 's|<application|<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <application|' android/app/src/main/AndroidManifest.xml
 
       - name: Get packages
         run: flutter pub get
