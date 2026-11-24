@@ -1,11 +1,13 @@
-// ذخیرهٔ فایل در پوشهٔ عمومی Downloads گوشی — با MediaStore (بدون نیاز
-// به مجوز ذخیره‌سازی در اندروید ۱۰ به بالا). اگر MediaStore به هر دلیلی
-// نشد، به پوشهٔ خصوصیِ اپ برمی‌گردد (همان رفتار قبلی).
+// ذخیرهٔ فایل در پوشهٔ عمومی Downloads گوشی — با MediaStore و از طریق
+// کانالِ نیتیو (android-main/MainActivity.kt). بدون پکیجِ جانبی.
+// اگر ذخیره در Downloads به هر دلیلی نشد، به پوشهٔ خصوصیِ اپ برمی‌گردد
+// (همان رفتار قبلی).
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:media_store_plus/media_store_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// نتیجهٔ ذخیره: مسیرِ نمایشی برای پیامک + اینکه در پوشهٔ عمومی است یا نه.
@@ -15,12 +17,21 @@ class SaveResult {
   const SaveResult(this.displayPath, this.isPublic);
 }
 
-bool _mediaStoreReady = false;
+const _downloadsChannel = MethodChannel('aichat/downloads');
 
-Future<void> _ensureMediaStore() async {
-  if (_mediaStoreReady) return;
-  await MediaStore.ensureInitialized();
-  _mediaStoreReady = true;
+String _mimeFor(String filename) {
+  final lower = filename.toLowerCase();
+  if (lower.endsWith('.json')) return 'application/json';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html';
+  if (lower.endsWith('.txt') ||
+      lower.endsWith('.md') ||
+      lower.endsWith('.csv') ||
+      lower.endsWith('.log')) return 'text/plain';
+  return 'application/octet-stream';
 }
 
 /// ذخیرهٔ بایت‌ها با نامِ داده‌شده در پوشهٔ Downloads.
@@ -29,20 +40,19 @@ Future<SaveResult> saveToDownloads({
   required String filename,
 }) async {
   try {
-    final tmpDir = await getTemporaryDirectory();
-    final tmp = File('${tmpDir.path}/$filename');
-    await tmp.writeAsBytes(bytes, flush: true);
-    await _ensureMediaStore();
-    final info = await MediaStore().saveFile(
-      tempFilePath: tmp.path,
-      dirType: DirType.download,
-      dirName: DirName.download,
+    final display = await _downloadsChannel.invokeMethod<String>(
+      'saveToDownloads',
+      <String, dynamic>{
+        'bytes': Uint8List.fromList(bytes),
+        'filename': filename,
+        'mime': _mimeFor(filename),
+      },
     );
-    if (info != null) {
-      return SaveResult('Downloads/$filename', true);
+    if (display != null && display.isNotEmpty) {
+      return SaveResult(display, true);
     }
   } catch (_) {
-    // خطای MediaStore — به پوشهٔ خصوصیِ اپ برمی‌گردیم.
+    // ذخیره در Downloads نشد — به پوشهٔ خصوصیِ اپ برمی‌گردیم.
   }
   final dir = await getApplicationDocumentsDirectory();
   final file = File('${dir.path}/$filename');
