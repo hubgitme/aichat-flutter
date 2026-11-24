@@ -40,6 +40,10 @@ jobs:
           # WRITE_EXTERNAL_STORAGE (API <=29 only) for the direct-file path of MediaStore saves on old Android
           grep -q 'WRITE_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml || \
             sed -i 's|<application|<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <application|' android/app/src/main/AndroidManifest.xml
+            # media_store_plus AAR metadata requires compileSdk 34+ (scaffold defaults to 33)
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle.kts 2>/dev/null || true
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle 2>/dev/null || true
+            sed -i 's/compileSdk flutter.compileSdkVersion/compileSdk 35/' android/app/build.gradle.kts 2>/dev/null || true
 
       - name: Get packages
         run: flutter pub get
