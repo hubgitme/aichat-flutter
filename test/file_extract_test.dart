@@ -15,13 +15,13 @@ List<int> makeDocx(List<String> paragraphs) {
   final bytes = utf8.encode(xml);
   final archive = Archive();
   archive.addFile(ArchiveFile('word/document.xml', bytes.length, bytes));
-  return ZipEncoder().encode(archive)!;
+  return ZipEncoder().encode(archive);
 }
 
 /// ساخت یک PDF حداقلی با یک استریم متنی (فشرده یا خام).
 List<int> makePdf(String streamText, {bool deflate = true}) {
   final raw = utf8.encode(streamText);
-  final data = deflate ? ZLibEncoder().convert(raw) : raw;
+  final data = deflate ? zlib.encode(raw) : raw;
   final out = <int>[];
   out.addAll(utf8.encode(
       '%PDF-1.4\n1 0 obj\n<< /Length ${data.length} >>\nstream\n'));
@@ -61,7 +61,7 @@ void main() {
 
     test('returns empty for a non-docx zip', () {
       final archive = Archive();
-      final bytes = ZipEncoder().encode(archive)!;
+      final bytes = ZipEncoder().encode(archive);
       expect(extractTextFromDocxBytes(bytes), '');
     });
   });
