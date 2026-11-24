@@ -299,11 +299,12 @@ class _SettingsPageState extends State<SettingsPage> {
                     onPressed: _syncing
                         ? null
                         : () async {
+                            final messenger = ScaffoldMessenger.of(context);
                             setState(() => _syncing = true);
                             final msg = await widget.onSyncNow();
                             if (mounted) {
                               setState(() => _syncing = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                   SnackBar(content: Text(msg)));
                             }
                           },
