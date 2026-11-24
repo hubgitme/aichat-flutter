@@ -8,13 +8,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
+import '../downloads.dart';
+import '../file_extract.dart';
 import '../models.dart';
 import '../settings.dart';
 import '../store.dart';
@@ -47,8 +49,22 @@ class _HomePageState extends State<HomePage> {
   bool _cancelled = false;
   http.Client? _activeChatClient;
 
-  Uint8List? _attachedBytes;
-  String? _attachedDataUrl;
+  // پیوست‌ها — مثل نسخهٔ وب: عکس‌ها (vision) و فایل‌های سند (متنِ استخراج‌شده).
+  final List<_AttachedImage> _attachedImages = [];
+  final List<_AttachedDoc> _attachedDocs = [];
+
+  /// فایل‌های سندِ معتبر (متن استخراج شده و بدون خطا).
+  List<AttachedDoc> get _validDocs => _attachedDocs
+      .where((d) => d.text != null && d.error == null)
+      .map((d) => AttachedDoc(name: d.name, text: d.text!))
+      .toList();
+
+  List<String> get _attachedImageUrls =>
+      _attachedImages.map((i) => i.dataUrl).toList();
+
+  /// اولین عکسِ پیوستی — برای حالت «ویرایش عکس».
+  String? get _firstImageDataUrl =>
+      _attachedImages.isEmpty ? null : _attachedImages.first.dataUrl;
 
   final _composerCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
@@ -199,11 +215,14 @@ class _HomePageState extends State<HomePage> {
   Future<void> _exportConversations() async {
     try {
       final json = await _store?.exportAll() ?? '';
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File(
-          '${dir.path}/aichat-export-${DateTime.now().millisecondsSinceEpoch}.json');
-      await file.writeAsString(json, encoding: utf8);
-      _snack('خروجی ذخیره شد: ${file.path}');
+      final result = await saveTextToDownloads(
+        text: json,
+        filename:
+            'aichat-export-${DateTime.now().millisecondsSinceEpoch}.json',
+      );
+      _snack(result.isPublic
+          ? 'خروجی در پوشهٔ Downloads ذخیره شد: ${result.displayPath}'
+          : 'خروجی ذخیره شد: ${result.displayPath}');
     } catch (e) {
       _snack('خطا در خروجی: $e');
     }
@@ -321,20 +340,95 @@ class _HomePageState extends State<HomePage> {
           : name.endsWith('.webp')
               ? 'image/webp'
               : 'image/jpeg';
-      setState(() {
-        _attachedBytes = bytes;
-        _attachedDataUrl =
-            'data:$mime;base64,${base64Encode(bytes)}';
-      });
+      if (mounted) {
+        setState(() {
+          _attachedImages.add(_AttachedImage(
+            bytes: bytes,
+            dataUrl: 'data:$mime;base64,${base64Encode(bytes)}',
+            name: x.name,
+          ));
+        });
+      }
     } catch (e) {
       _snack('خطا در انتخاب عکس: $e');
     }
   }
 
+  // --- پیوست فایل (مثل نسخهٔ وب: عکس + سند/کد + PDF + Word) ---
+
+  Future<void> _pickFiles() async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: pickableExtensions,
+      );
+      for (final f in files) {
+        final name = f.name;
+        final ext = fileExtension(name);
+        if (imageExtensions.contains(ext)) {
+          final bytes = await f.readAsBytes();
+          if (bytes.length > 8 * 1024 * 1024) {
+            _snack('عکس بزرگ‌تر از ۸ مگابایت است.');
+            continue;
+          }
+          final lower = name.toLowerCase();
+          final mime = lower.endsWith('.png')
+              ? 'image/png'
+              : lower.endsWith('.webp')
+                  ? 'image/webp'
+                  : lower.endsWith('.gif')
+                      ? 'image/gif'
+                      : 'image/jpeg';
+          if (mounted) {
+            setState(() {
+              _attachedImages.add(_AttachedImage(
+                bytes: bytes,
+                dataUrl: 'data:$mime;base64,${base64Encode(bytes)}',
+                name: name,
+              ));
+            });
+          }
+          continue;
+        }
+        if (!documentExtensions.contains(ext)) {
+          _snack('نوع فایل «$name» پشتیبانی نمی‌شود.');
+          continue;
+        }
+        // سقف حجم را قبل از خواندنِ کامل چک می‌کنیم (مثل وب).
+        final size = await f.length();
+        if (size != null && size > maxSingleFileBytes) {
+          _snack('حجم فایل «$name» بیش از حد مجاز است (حداکثر ۵ مگابایت).');
+          continue;
+        }
+        final doc = _AttachedDoc(name: name, loading: true);
+        if (mounted) setState(() => _attachedDocs.add(doc));
+        try {
+          final bytes = await f.readAsBytes();
+          final text = extractTextFromFileBytes(name, bytes);
+          if (mounted) {
+            setState(() {
+              doc.text = text;
+              doc.loading = false;
+            });
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              doc.error = e.toString();
+              doc.loading = false;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      _snack('خطا در انتخاب فایل: $e');
+    }
+  }
+
   void _clearAttachment() {
     setState(() {
-      _attachedBytes = null;
-      _attachedDataUrl = null;
+      _attachedImages.clear();
+      _attachedDocs.clear();
     });
   }
 
@@ -363,7 +457,11 @@ class _HomePageState extends State<HomePage> {
     final settings = _settings;
     if (settings == null) return;
     final text = _composerCtrl.text.trim();
-    if (text.isEmpty && _attachedDataUrl == null) return;
+    if (text.isEmpty &&
+        _attachedImages.isEmpty &&
+        _validDocs.isEmpty) {
+      return;
+    }
     if (!settings.hasBackend) {
       _snack('اول آدرس بک‌اند را در تنظیمات وارد کن.');
       return;
@@ -386,15 +484,25 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    final images = _attachedDataUrl != null ? [_attachedDataUrl!] : null;
+    final images = _attachedImages.isEmpty ? null : _attachedImageUrls;
+    // متنِ فایل‌های پیوستی به پیام اضافه می‌شود (همان docsBlock نسخهٔ وب)؛
+    // content همان متنِ تایپ‌شده می‌ماند و docNames برای نمایش ذخیره می‌شود.
+    final docs = _validDocs;
+    final docsBlock = buildDocsBlock(docs);
     final userMsg = ChatMessage(
       role: 'user',
       content: text,
+      apiContent: docsBlock.isEmpty ? null : text + docsBlock,
       images: images,
+      docNames: docs.isEmpty ? null : docs.map((d) => d.name).toList(),
     );
     conv.messages.add(userMsg);
     if (isFirstUserMsg) {
-      conv.title = text.length > 40 ? text.substring(0, 40) : text;
+      final titleBase = text.isNotEmpty
+          ? text
+          : (docs.isNotEmpty ? '📄 ${docs.first.name}' : 'گفت‌وگوی جدید');
+      conv.title =
+          titleBase.length > 40 ? titleBase.substring(0, 40) : titleBase;
     }
     _composerCtrl.clear();
     _clearAttachment();
@@ -492,7 +600,7 @@ class _HomePageState extends State<HomePage> {
     final needsSource = settings.imageEndpointType ==
             ImageEndpointType.edits ||
         settings.imageEndpointType == ImageEndpointType.editsJson;
-    if (needsSource && _attachedDataUrl == null) {
+    if (needsSource && _firstImageDataUrl == null) {
       _snack('برای «ویرایش عکس»، اول یک عکس پیوست کن.');
       return;
     }
@@ -509,11 +617,11 @@ class _HomePageState extends State<HomePage> {
     final userMsg = ChatMessage(
       role: 'user',
       content: text,
-      images: _attachedDataUrl != null ? [_attachedDataUrl!] : null,
+      images: _attachedImages.isEmpty ? null : _attachedImageUrls,
     );
     conv.messages.add(userMsg);
     _composerCtrl.clear();
-    final src = _attachedDataUrl;
+    final src = _firstImageDataUrl;
     _clearAttachment();
     setState(() {});
     _scrollToBottom();
@@ -646,6 +754,9 @@ class _HomePageState extends State<HomePage> {
         break;
       case 'attach':
         _pickImage();
+        break;
+      case 'file':
+        _pickFiles();
         break;
       case 'search':
         _toggleSearchMode();
@@ -921,36 +1032,64 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_attachedBytes != null)
+            // پیش‌نمایش پیوست‌ها — مثل نسخهٔ وب: بند انگشتی عکس‌ها و
+            // چیپِ فایل‌های سند (با وضعیت خواندن/خطا)، هرکدام با ✕ برای حذف.
+            if (_attachedImages.isNotEmpty || _attachedDocs.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
-                child: Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        _attachedBytes!,
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      child: InkWell(
-                        onTap: _clearAttachment,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.errorContainer,
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(2),
-                          child: const Icon(Icons.close, size: 16),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (var i = 0; i < _attachedImages.length; i++)
+                        Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                _attachedImages[i].bytes,
+                                width: 72,
+                                height: 72,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              child: InkWell(
+                                onTap: () => setState(
+                                    () => _attachedImages.removeAt(i)),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.errorContainer,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  padding: const EdgeInsets.all(2),
+                                  child:
+                                      const Icon(Icons.close, size: 16),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
-                  ],
+                      for (var i = 0; i < _attachedDocs.length; i++)
+                        Chip(
+                          label: Text(
+                            _attachedDocs[i].loading
+                                ? '⏳ ${_attachedDocs[i].name}'
+                                : _attachedDocs[i].error != null
+                                    ? '⚠️ ${_attachedDocs[i].name}'
+                                    : '📄 ${_attachedDocs[i].name}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () =>
+                              setState(() => _attachedDocs.removeAt(i)),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             if (_activeModeLabel != null)
@@ -1004,6 +1143,8 @@ class _HomePageState extends State<HomePage> {
                         'chat', Icons.chat_bubble_outline, 'گفت‌وگوی عادی', _isPlainChat),
                     _composerMenuItem(
                         'attach', Icons.attach_file, 'پیوست عکس', false),
+                    _composerMenuItem('file', Icons.insert_drive_file,
+                        'پیوست فایل', false),
                     _composerMenuItem(
                         'search', Icons.search, 'جست‌وجوی وب', _searchMode),
                     _composerMenuItem(
@@ -1047,9 +1188,10 @@ class _MessageBubble extends StatelessWidget {
     final isUser = message.role == 'user';
     final align =
         isUser ? Alignment.centerRight : Alignment.centerLeft;
+    // رنگ حباب‌ها از تم وب: کاربر = --bg-active، دستیار = --bg-panel.
     final bg = isUser
         ? theme.colorScheme.primaryContainer
-        : theme.colorScheme.surfaceContainerLow;
+        : theme.colorScheme.surface;
     return Align(
       alignment: align,
       child: Container(
@@ -1072,6 +1214,17 @@ class _MessageBubble extends StatelessWidget {
                   )),
             if (message.generatedVideo && message.videoUrl != null)
               _VideoCard(url: message.videoUrl!),
+            // نام فایل‌های پیوستی — مثل docHint نسخهٔ وب.
+            if (message.docNames != null && message.docNames!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '📄 پیوست: ${message.docNames!.join('، ')}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             if (message.content.isNotEmpty)
               isUser
                   ? SelectableText(message.content)
@@ -1178,13 +1331,16 @@ class _InlineImage extends StatelessWidget {
                 }
                 bytes = Uint8List.fromList(chunks);
               }
-              final dir = await getApplicationDocumentsDirectory();
-              final file = File(
-                  '${dir.path}/aichat-image-${DateTime.now().millisecondsSinceEpoch}.$ext');
-              await file.writeAsBytes(bytes);
+              final filename =
+                  'aichat-image-${DateTime.now().millisecondsSinceEpoch}.$ext';
+              final result =
+                  await saveToDownloads(bytes: bytes, filename: filename);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('ذخیره شد: ${file.path}')),
+                  SnackBar(
+                      content: Text(result.isPublic
+                          ? 'در پوشهٔ Downloads ذخیره شد: ${result.displayPath}'
+                          : 'ذخیره شد: ${result.displayPath}')),
                 );
               }
             } catch (e) {
@@ -1240,4 +1396,30 @@ class _VideoCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// یک عکسِ پیوستی (بایت‌ها + data URL برای vision + نام فایل).
+class _AttachedImage {
+  final Uint8List bytes;
+  final String dataUrl;
+  final String name;
+  const _AttachedImage({
+    required this.bytes,
+    required this.dataUrl,
+    required this.name,
+  });
+}
+
+/// یک فایلِ سندِ پیوستی (نام + متنِ استخراج‌شده یا وضعیت خواندن/خطا).
+class _AttachedDoc {
+  final String name;
+  String? text;
+  bool loading;
+  String? error;
+  _AttachedDoc({
+    required this.name,
+    this.text,
+    this.loading = false,
+    this.error,
+  });
 }
