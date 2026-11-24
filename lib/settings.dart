@@ -57,6 +57,16 @@ extension ImageEndpointTypeLabel on ImageEndpointType {
   }
 }
 
+/// تمِ ظاهری (مثل نسخهٔ وب: روشن/تیره، پیش‌فرض روشن).
+enum AppThemeMode { light, dark }
+
+extension AppThemeModeLabel on AppThemeMode {
+  String get value => this == AppThemeMode.dark ? 'dark' : 'light';
+
+  static AppThemeMode fromValue(String? v) =>
+      v == 'dark' ? AppThemeMode.dark : AppThemeMode.light;
+}
+
 /// یک پروایدرِ ثبت‌شده: نام + آدرس پایه + مدل‌ها.
 class ProviderEntry {
   final String id;
@@ -133,6 +143,8 @@ class AppSettings {
   // سینک
   String syncCode;
   bool autoSync;
+  // ظاهر
+  AppThemeMode themeMode;
 
   AppSettings({
     this.backendUrl = '',
@@ -150,6 +162,7 @@ class AppSettings {
     this.videoUrlPattern = '',
     this.syncCode = '',
     this.autoSync = false,
+    this.themeMode = AppThemeMode.light,
   })  : providers = providers ?? [],
         apiKeys = apiKeys ?? [];
 
@@ -326,6 +339,7 @@ class AppSettings {
       videoUrlPattern: s('video_url_pattern'),
       syncCode: s('sync_code'),
       autoSync: prefs.getBool('${_p}auto_sync') ?? false,
+      themeMode: AppThemeModeLabel.fromValue(s('theme_mode')),
     );
 
     // مهاجرتِ یک‌باره از فیلدهای تکیِ نسخهٔ قبل
@@ -435,6 +449,7 @@ class AppSettings {
     await put('video_duration', videoDuration);
     await put('video_url_pattern', videoUrlPattern);
     await put('sync_code', syncCode);
+    await put('theme_mode', themeMode.value);
     await prefs.setBool('${_p}auto_sync', autoSync);
   }
 
