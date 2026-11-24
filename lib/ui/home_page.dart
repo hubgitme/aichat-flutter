@@ -1418,8 +1418,6 @@ class _AttachedDoc {
   String? error;
   _AttachedDoc({
     required this.name,
-    this.text,
     this.loading = false,
-    this.error,
   });
 }
