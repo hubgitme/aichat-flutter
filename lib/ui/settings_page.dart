@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app_theme.dart';
 import '../settings.dart';
 import '../sync_crypto.dart';
 import 'mode_selectors.dart';
@@ -84,6 +85,13 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _changed() => widget.onSettingsChanged();
+
+  void _setTheme(AppThemeMode mode) {
+    setState(() => widget.settings.themeMode = mode);
+    _changed();
+    appThemeMode.value =
+        mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
+  }
 
   void _snack(String msg) {
     if (!mounted) return;
@@ -311,6 +319,28 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          const _SectionHeader('ظاهر'),
+          _SectionCard(children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _ThemeButton(
+                    label: '☀️ روشن (کاغذی)',
+                    selected: s.themeMode == AppThemeMode.light,
+                    onTap: () => _setTheme(AppThemeMode.light),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ThemeButton(
+                    label: '🌙 تیره',
+                    selected: s.themeMode == AppThemeMode.dark,
+                    onTap: () => _setTheme(AppThemeMode.dark),
+                  ),
+                ),
+              ],
+            ),
+          ]),
           const _SectionHeader('اتصال'),
           _SectionCard(children: [
             _FieldRow(
@@ -771,6 +801,32 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// دکمهٔ انتخاب تم (روشن/تیره) — گزینهٔ فعال پررنگ است (مثل نسخهٔ وب).
+class _ThemeButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ThemeButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (selected) {
+      return FilledButton(
+        onPressed: onTap,
+        child: Text(label),
+      );
+    }
+    return OutlinedButton(
+      onPressed: onTap,
+      child: Text(label),
     );
   }
 }
