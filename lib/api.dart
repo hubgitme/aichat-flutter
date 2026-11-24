@@ -269,7 +269,7 @@ class ApiClient {
           continue;
         }
         rethrow;
-      } on ClientException {
+      } on http.ClientException {
         client.close();
         if (isCancelled?.call() == true) return fullText;
         if (fullText.isEmpty && attempt < maxRetries - 1) {
